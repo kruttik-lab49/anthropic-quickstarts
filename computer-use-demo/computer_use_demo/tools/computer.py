@@ -57,6 +57,16 @@ class ComputerToolOptions(TypedDict):
     display_number: int | None
 
 
+# sizes above XGA/WXGA are not recommended (see README.md)
+# scale down to one of these targets if ComputerTool._scaling_enabled is set
+MAX_SCALING_TARGETS: dict[str, Resolution] = {
+    "RETINA_SCALED": Resolution(width=1728, height=1117),  # Retina display scaled by 2
+    "XGA": Resolution(width=1024, height=768),  # 4:3
+    "WXGA": Resolution(width=1280, height=800),  # 16:10
+    "FWXGA": Resolution(width=1366, height=768),  # ~16:9
+}
+
+
 def chunks(s: str, chunk_size: int) -> list[str]:
     return [s[i : i + chunk_size] for i in range(0, len(s), chunk_size)]
 
@@ -259,11 +269,11 @@ class ComputerTool(BaseAnthropicTool):
 
         result = await self.shell(screenshot_cmd, take_screenshot=False)
         if self._scaling_enabled:
-            x, y = self.scale_coordinates(
-                ScalingSource.COMPUTER, self.width, self.height
-            )
+            # Scale the screenshot to our target resolution
+            target = MAX_SCALING_TARGETS["RETINA_SCALED"]
             await self.shell(
-                f"convert {path} -resize {x}x{y}! {path}", take_screenshot=False
+                f"convert {path} -resize {target['width']}x{target['height']}! {path}",
+                take_screenshot=False
             )
 
         if path.exists():
@@ -285,26 +295,25 @@ class ComputerTool(BaseAnthropicTool):
         return ToolResult(output=stdout, error=stderr, base64_image=base64_image)
 
     def scale_coordinates(self, source: ScalingSource, x: int, y: int):
-        """Scale coordinates to a target maximum resolution."""
+        """Scale coordinates between API and actual screen resolution."""
         if not self._scaling_enabled:
             return x, y
-        ratio = self.width / self.height
-        target_dimension = None
-        for dimension in MAX_SCALING_TARGETS.values():
-            # allow some error in the aspect ratio - not ratios are exactly 16:9
-            if abs(dimension["width"] / dimension["height"] - ratio) < 0.02:
-                if dimension["width"] < self.width:
-                    target_dimension = dimension
-                break
-        if target_dimension is None:
-            return x, y
-        # should be less than 1
-        x_scaling_factor = target_dimension["width"] / self.width
-        y_scaling_factor = target_dimension["height"] / self.height
+
+        # For Retina displays, we want to work with the effective resolution
+        # which is typically the physical resolution divided by 2
+        effective_width = self.width // 2  # 3456 -> 1728
+        effective_height = self.height // 2  # 2234 -> 1117
+
+        # Use RETINA_SCALED as our target resolution
+        target_dimension = MAX_SCALING_TARGETS["RETINA_SCALED"]
+
+        # Calculate scaling factors between effective resolution and target
+        x_scale = effective_width / target_dimension["width"]
+        y_scale = effective_height / target_dimension["height"]
+
         if source == ScalingSource.API:
-            if x > self.width or y > self.height:
-                raise ToolError(f"Coordinates {x}, {y} are out of bounds")
-            # scale up
-            return round(x / x_scaling_factor), round(y / y_scaling_factor)
-        # scale down
-        return round(x * x_scaling_factor), round(y * y_scaling_factor)
+            # API -> Screen: scale up to physical resolution
+            return round(x * x_scale * 2), round(y * y_scale * 2)
+        else:
+            # Screen -> API: scale down from physical resolution
+            return round((x / 2) / x_scale), round((y / 2) / y_scale)
