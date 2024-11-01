@@ -96,18 +96,7 @@ class ComputerTool(BaseAnthropicTool):
         self.width = int(os.getenv("WIDTH") or 0)
         self.height = int(os.getenv("HEIGHT") or 0)
         assert self.width and self.height, "WIDTH, HEIGHT must be set"
-        if (display_num := os.getenv("DISPLAY_NUM")) is not None:
-            self.display_num = int(display_num)
-            # Ensure DISPLAY is set in environment for xdotool
-            os.environ["DISPLAY"] = f":{self.display_num}"
-            self._display_prefix = f"DISPLAY=:{self.display_num} "
-        else:
-            self.display_num = None
-            self._display_prefix = ""
-            if "DISPLAY" not in os.environ:
-                os.environ["DISPLAY"] = ":1"  # Default display if none set
-
-        self.xdotool = f"{self._display_prefix}xdotool"
+        self.display_num = int(os.getenv("DISPLAY_NUM", "1"))
 
     async def __call__(
         self,
@@ -132,11 +121,9 @@ class ComputerTool(BaseAnthropicTool):
             )
 
             if action == "mouse_move":
-                return await self.shell(f"{self.xdotool} mousemove --sync {x} {y}")
+                return await self.shell(f"cliclick m:{x},{y}")
             elif action == "left_click_drag":
-                return await self.shell(
-                    f"{self.xdotool} mousedown 1 mousemove --sync {x} {y} mouseup 1"
-                )
+                return await self.shell(f"cliclick dd:{x},{y}")
 
         if action in ("key", "type"):
             if text is None:
@@ -147,11 +134,26 @@ class ComputerTool(BaseAnthropicTool):
                 raise ToolError(output=f"{text} must be a string")
 
             if action == "key":
-                return await self.shell(f"{self.xdotool} key -- {text}")
+                # Convert xdotool key format to cliclick format
+                key_mapping = {
+                    "super": "cmd",  # Map xdotool's super to cmd for Mac
+                    "Return": "return",
+                    "space": "space",
+                    "Tab": "tab",
+                    "Left": "left",
+                    "Right": "right",
+                    "Up": "up",
+                    "Down": "down",
+                    "Escape": "esc",
+                }
+                mac_keys = text
+                for xdo_key, mac_key in key_mapping.items():
+                    mac_keys = mac_keys.replace(xdo_key, mac_key)
+                return await self.shell(f"cliclick kp:{mac_keys}")
             elif action == "type":
                 results: list[ToolResult] = []
                 for chunk in chunks(text, TYPING_GROUP_SIZE):
-                    cmd = f"{self.xdotool} type --delay {TYPING_DELAY_MS} -- {shlex.quote(chunk)}"
+                    cmd = f"cliclick w:{TYPING_DELAY_MS} t:{shlex.quote(chunk)}"
                     results.append(await self.shell(cmd, take_screenshot=False))
                 screenshot_base64 = (await self.screenshot()).base64_image
                 return ToolResult(
@@ -176,25 +178,27 @@ class ComputerTool(BaseAnthropicTool):
             if action == "screenshot":
                 return await self.screenshot()
             elif action == "cursor_position":
-                result = await self.shell(
-                    f"{self.xdotool} getmouselocation --shell",
-                    take_screenshot=False,
-                )
+                result = await self.shell("cliclick p", take_screenshot=False)
                 output = result.output or ""
-                x, y = self.scale_coordinates(
-                    ScalingSource.COMPUTER,
-                    int(output.split("X=")[1].split("\n")[0]),
-                    int(output.split("Y=")[1].split("\n")[0]),
-                )
-                return result.replace(output=f"X={x},Y={y}")
+                try:
+                    # cliclick p returns format "Point: <x>, <y>"
+                    coords = output.split(": ")[1].split(", ")
+                    x, y = self.scale_coordinates(
+                        ScalingSource.COMPUTER,
+                        int(coords[0]),
+                        int(coords[1])
+                    )
+                    return result.replace(output=f"X={x},Y={y}")
+                except (IndexError, ValueError) as e:
+                    raise ToolError(f"Failed to parse cursor position: {e}")
             else:
-                click_arg = {
-                    "left_click": "1",
-                    "right_click": "3",
-                    "middle_click": "2",
-                    "double_click": "--repeat 2 --delay 500 1",
-                }[action]
-                return await self.shell(f"{self.xdotool} click {click_arg}")
+                click_mapping = {
+                    "left_click": "c:.",
+                    "right_click": "rc:.",
+                    "middle_click": "mc:.",
+                    "double_click": "dc:.",
+                }
+                return await self.shell(f"cliclick {click_mapping[action]}")
 
         raise ToolError(f"Invalid action: {action}")
 
