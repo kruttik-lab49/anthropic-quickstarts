@@ -98,10 +98,14 @@ class ComputerTool(BaseAnthropicTool):
         assert self.width and self.height, "WIDTH, HEIGHT must be set"
         if (display_num := os.getenv("DISPLAY_NUM")) is not None:
             self.display_num = int(display_num)
+            # Ensure DISPLAY is set in environment for xdotool
+            os.environ["DISPLAY"] = f":{self.display_num}"
             self._display_prefix = f"DISPLAY=:{self.display_num} "
         else:
             self.display_num = None
             self._display_prefix = ""
+            if "DISPLAY" not in os.environ:
+                os.environ["DISPLAY"] = ":1"  # Default display if none set
 
         self.xdotool = f"{self._display_prefix}xdotool"
 
