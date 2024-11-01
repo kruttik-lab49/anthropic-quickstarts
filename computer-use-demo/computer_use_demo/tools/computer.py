@@ -121,8 +121,10 @@ class ComputerTool(BaseAnthropicTool):
             )
 
             if action == "mouse_move":
+                # Move mouse with cliclick m: command
                 return await self.shell(f"cliclick m:{x},{y}")
             elif action == "left_click_drag":
+                # Start drag with cliclick dd: command 
                 return await self.shell(f"cliclick dd:{x},{y}")
 
         if action in ("key", "type"):
@@ -134,23 +136,52 @@ class ComputerTool(BaseAnthropicTool):
                 raise ToolError(output=f"{text} must be a string")
 
             if action == "key":
-                # Convert xdotool key format to cliclick format
+                # Map common keys to cliclick format
                 key_mapping = {
-                    "super": "cmd",  # Map xdotool's super to cmd for Mac
+                    "super": "cmd",
                     "Return": "return",
-                    "space": "space",
+                    "space": "space", 
                     "Tab": "tab",
-                    "Left": "left",
-                    "Right": "right",
-                    "Up": "up",
-                    "Down": "down",
+                    "Left": "arrow-left",
+                    "Right": "arrow-right",
+                    "Up": "arrow-up",
+                    "Down": "arrow-down",
                     "Escape": "esc",
+                    "BackSpace": "delete",
+                    "Delete": "fwd-delete",
+                    "Home": "home",
+                    "End": "end",
+                    "Page_Up": "page-up",
+                    "Page_Down": "page-down",
+                    "F1": "f1", "F2": "f2", "F3": "f3", "F4": "f4",
+                    "F5": "f5", "F6": "f6", "F7": "f7", "F8": "f8",
+                    "F9": "f9", "F10": "f10", "F11": "f11", "F12": "f12"
                 }
-                mac_keys = text
-                for xdo_key, mac_key in key_mapping.items():
-                    mac_keys = mac_keys.replace(xdo_key, mac_key)
-                return await self.shell(f"cliclick kp:{mac_keys}")
+                
+                # Handle modifier keys separately
+                modifiers = []
+                keys = text.split("+")
+                for key in keys:
+                    if key.lower() in ["alt", "cmd", "ctrl", "fn", "shift"]:
+                        modifiers.append(key.lower())
+                    else:
+                        mac_key = key_mapping.get(key, key.lower())
+                        if modifiers:
+                            # Press modifiers down
+                            await self.shell(f"cliclick kd:{','.join(modifiers)}")
+                            # Press the key
+                            result = await self.shell(f"cliclick kp:{mac_key}")
+                            # Release modifiers
+                            await self.shell(f"cliclick ku:{','.join(modifiers)}")
+                            return result
+                        else:
+                            return await self.shell(f"cliclick kp:{mac_key}")
+                            
+                if modifiers:
+                    return await self.shell(f"cliclick kd:{','.join(modifiers)}")
+                    
             elif action == "type":
+                # Use cliclick's t: command for typing text with proper delay
                 results: list[ToolResult] = []
                 for chunk in chunks(text, TYPING_GROUP_SIZE):
                     cmd = f"cliclick w:{TYPING_DELAY_MS} t:{shlex.quote(chunk)}"
@@ -192,13 +223,22 @@ class ComputerTool(BaseAnthropicTool):
                 except (IndexError, ValueError) as e:
                     raise ToolError(f"Failed to parse cursor position: {e}")
             else:
+                # Map click actions to cliclick commands
                 click_mapping = {
-                    "left_click": "c:.",
-                    "right_click": "rc:.",
-                    "middle_click": "mc:.",
-                    "double_click": "dc:.",
+                    "left_click": "c:.",  # Click at current position
+                    "right_click": "rc:.", # Right click
+                    "middle_click": None,  # Not supported by cliclick
+                    "double_click": "dc:.", # Double click
                 }
-                return await self.shell(f"cliclick {click_mapping[action]}")
+                
+                if action not in click_mapping:
+                    raise ToolError(f"Unsupported click action: {action}")
+                    
+                cmd = click_mapping[action]
+                if cmd is None:
+                    raise ToolError(f"Action {action} is not supported by cliclick on macOS")
+                    
+                return await self.shell(f"cliclick {cmd}")
 
         raise ToolError(f"Invalid action: {action}")
 
