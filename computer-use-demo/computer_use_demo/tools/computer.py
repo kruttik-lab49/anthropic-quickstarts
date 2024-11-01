@@ -200,12 +200,8 @@ class ComputerTool(BaseAnthropicTool):
         output_dir.mkdir(parents=True, exist_ok=True)
         path = output_dir / f"screenshot_{uuid4().hex}.png"
 
-        # Try gnome-screenshot first
-        if shutil.which("gnome-screenshot"):
-            screenshot_cmd = f"{self._display_prefix}gnome-screenshot -f {path} -p"
-        else:
-            # Fall back to scrot if gnome-screenshot isn't available
-            screenshot_cmd = f"{self._display_prefix}scrot -p {path}"
+        # Use macOS screencapture command
+        screenshot_cmd = f"screencapture -x {path}"
 
         result = await self.shell(screenshot_cmd, take_screenshot=False)
         if self._scaling_enabled:
