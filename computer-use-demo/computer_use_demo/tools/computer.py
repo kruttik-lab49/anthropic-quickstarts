@@ -158,27 +158,33 @@ class ComputerTool(BaseAnthropicTool):
                     "F9": "f9", "F10": "f10", "F11": "f11", "F12": "f12"
                 }
                 
-                # Handle modifier keys separately
-                modifiers = []
+                # Split input by + to separate modifiers and keys
                 keys = text.split("+")
+                modifiers = []
+                regular_key = None
+                
+                # Separate modifiers and regular key
                 for key in keys:
-                    if key.lower() in ["alt", "cmd", "ctrl", "fn", "shift"]:
-                        modifiers.append(key.lower())
+                    key = key.lower()
+                    if key in ["alt", "cmd", "ctrl", "fn", "shift"]:
+                        modifiers.append(key_mapping.get(key, key))
                     else:
-                        mac_key = key_mapping.get(key, key.lower())
-                        if modifiers:
-                            # Press modifiers down
-                            await self.shell(f"cliclick kd:{','.join(modifiers)}")
-                            # Press the key
-                            result = await self.shell(f"cliclick kp:{mac_key}")
-                            # Release modifiers
-                            await self.shell(f"cliclick ku:{','.join(modifiers)}")
-                            return result
-                        else:
-                            return await self.shell(f"cliclick kp:{mac_key}")
-                            
+                        if regular_key:
+                            raise ToolError("Only one non-modifier key allowed")
+                        regular_key = key_mapping.get(key, key)
+                
+                # Build single cliclick command with all operations
+                cmd_parts = []
                 if modifiers:
-                    return await self.shell(f"cliclick kd:{','.join(modifiers)}")
+                    cmd_parts.append(f"kd:{','.join(modifiers)}")
+                if regular_key:
+                    cmd_parts.append(f"kp:{regular_key}")
+                if modifiers:
+                    # Reverse the modifiers list for LIFO order release
+                    cmd_parts.append(f"ku:{','.join(reversed(modifiers))}")
+                
+                # Execute single cliclick command with all parts
+                return await self.shell(f"cliclick {' '.join(cmd_parts)}")
                     
             elif action == "type":
                 # Use cliclick's t: command for typing text with proper delay
