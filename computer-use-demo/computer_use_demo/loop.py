@@ -160,7 +160,7 @@ async def sampling_loop(
 
         tool_result_content: list[BetaToolResultBlockParam] = []
         for content_block in response_params:
-            output_callback(content_block)
+            await output_callback(content_block)
             if content_block["type"] == "tool_use":
                 result = await tool_collection.run(
                     name=content_block["name"],

@@ -25,13 +25,14 @@ class CLIInterface:
         self.model = PROVIDER_TO_DEFAULT_MODEL_NAME[cast(APIProvider, self.provider)]
         self.api_key = os.getenv("ANTHROPIC_API_KEY", "")
         
-    async def output_callback(self, content: BetaContentBlockParam):
+    async def output_callback(self, content: BetaContentBlockParam) -> None:
         """Handle output from the agent"""
         if isinstance(content, dict):
             if content["type"] == "text":
                 print("\nClaude:", content["text"])
             elif content["type"] == "tool_use":
                 print(f"\nTool Use: {content['name']}\nInput: {content['input']}")
+            await asyncio.sleep(0)  # Allow other coroutines to run
 
     def tool_output_callback(self, tool_output: ToolResult, tool_id: str):
         """Handle tool output"""
